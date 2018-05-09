@@ -1072,10 +1072,16 @@ def parse_command_lines():
                                     help='List current repository of shapes and their geometric arguments')
     optional_arguments.add_argument('--outer', default='top', help='By default, top leaflet = outer leaflet. ' +
                                     'Set to "bot" to invert', metavar='')
-    optional_arguments.add_argument('--apl', metavar='', help='Slice top bilayer to achieve a specific area per ' +
-                                    'lipid in final shape - not yet implemented', default=None)
+    optional_arguments.add_argument('--use_apl_matching', action='store_true', help='Calculate geometric slices based' +
+                                    ' on exactly matching areas per lipid. This is turned off by default, and the ' +
+                                    'default method is to slice bilayers purely based on geometry matching')
+    optional_arguments.add_argument('--apl', metavar='', help='Slice bilayer to achieve a specific area per lipid. ' +
+                                    'Either one value or two colon separated values (upper and lower leaflet) can be ' +
+                                    'given. If the --use_apl_matching flag is set and no corresponding --apl value ' +
+                                    'is given, the areas per lipid will be calculated from the input files. Units are' +
+                                    'angstroms ^ 2', default=None)
     optional_arguments.add_argument('--ignore_resnames', help='colon separated list of resnames to ignore when ' +
-                                    'reading in a structure file, for example to exclude water', default=[])
+                                    'reading in a structure file, for example to exclude water', default=[], metavar='')
 
     dummy_arguments.add_argument('--gen_dummy_particles', action='store_true',
                                  help='Add a grid of dummy particles surrounding bilayer' )
@@ -1153,11 +1159,21 @@ def main():
     if args.outer == 'bot':
         template_bilayer.rotate([180, 0, 0], com=True)
         template_bilayer.metadata.leaflets = np.invert(template_bilayer.metadata.leaflets)
-    if args.apl:
-        currarea = template_bilayer.boxdims[0] * template_bilayer.boxdims[1]
-        newarea = args.apl * template_bilayer.coords.shape[0] / 2  # 2 leaflets
-        ratio = np.sqrt(newarea / currarea)
-        template_bilayer.scale_coordinates_rectangular(ratio)
+
+    # area per lipid stuff
+    if args.use_apl_matching:
+        
+        if not args.apl:
+            template_area = template_bilayer.boxdims[0] * template_bilayer.boxdims[1]
+            template_bilayer.apl_upper = template_area / np.sum( (template_bilayer.metadata.leaflets == 1) &
+                                                                 (template_bilayer.metadata.ressize > 0))
+            template_bilayer.apl_upper = template_area / np.sum( (template_bilayer.metadata.leaflets == 0) &
+                                                                 (template_bilayer.metadata.ressize > 0))
+        else:
+            apl = args.apl.split(':')
+            if len(apl) == 1:
+                apl *= 2
+        template_bilayer.apl_upper, template_bilayer.apl_lower = float(apl[0]), float(apl[1])
 
     mult_factor = (np.ceil(shape_tobuild.dimension_requirements(**geometric_args) /
                            template_bilayer.boxdims[0:2]).astype(int))
